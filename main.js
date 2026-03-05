@@ -1787,13 +1787,22 @@
   }
 
   function initTogglePw() {
-    document.addEventListener('mousedown', e => {
+    // FIX: 'mousedown' no es confiable en móviles/touch — usamos 'click'
+    // que funciona igual en desktop y en todos los navegadores móviles.
+    document.addEventListener('click', e => {
       const btn = e.target.closest('.toggle-pw'); if (!btn) return;
       e.preventDefault();
       const inp = document.getElementById(btn.dataset.target); if (!inp) return;
       const eo = btn.querySelector('.eye-o'), ec = btn.querySelector('.eye-c');
-      if (inp.type === 'password') { inp.type = 'text';     eo.style.display = 'none'; ec.style.display = ''; }
-      else                         { inp.type = 'password'; eo.style.display = '';     ec.style.display = 'none'; }
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        eo.style.display = 'none';
+        ec.style.display = '';
+      } else {
+        inp.type = 'password';
+        eo.style.display = '';
+        ec.style.display = 'none';
+      }
     });
   }
 

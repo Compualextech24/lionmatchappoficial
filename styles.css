@@ -634,4 +634,25 @@ body::before{
 .lb-close{position:fixed;top:1.25rem;right:1.25rem;z-index:10002;width:48px;height:48px;border-radius:50%;background:rgba(30,30,60,.9);border:1.5px solid rgba(255,255,255,.25);color:#fff;font-size:1.2rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 .lb-close:hover{background:rgba(248,113,113,.7)}
 
+
+/* Botones de login lado a lado */
+.login-btn-row {
+  display: flex;
+  gap: .75rem;
+}
+.login-btn-row .btn {
+  flex: 1;
+}
+
+/* Botón azul con degradado */
+.btn-blue {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  color: #fff;
+  box-shadow: 0 6px 28px rgba(59,130,246,.35);
+}
+.btn-blue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(59,130,246,.5);
+}
+
 *::-webkit-scrollbar{display:none}*{scrollbar-width:none}

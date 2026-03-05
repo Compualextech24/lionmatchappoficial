@@ -1713,44 +1713,47 @@
      24. FORMULARIOS PRINCIPALES
   ════════════════════════════════════════════════════ */
   function initForms() {
-    document.getElementById('login-form').addEventListener('submit', handleLogin);
-    document.getElementById('go-register').addEventListener('click', () => showScreen('register'));
-    document.getElementById('forgot-link').addEventListener('click', () => { document.getElementById('rec-email').value = ''; openModal('m-recovery'); });
-    document.getElementById('back-login').addEventListener('click', () => showScreen('login'));
-    document.getElementById('cancel-reg').addEventListener('click', () => showScreen('login'));
-    document.getElementById('register-form').addEventListener('submit', handleRegister);
+    // Helper: evita crash si un elemento no existe en el HTML
+    const on = (id, ev, fn) => document.getElementById(id)?.addEventListener(ev, fn);
 
-    document.getElementById('back-ob').addEventListener('click', handleLogout);
-    document.getElementById('ob-form').addEventListener('submit', handleCompleteProfile);
-    document.getElementById('ob-next').addEventListener('click', obNext);
-    document.getElementById('ob-prev').addEventListener('click', obPrev);
+    on('login-form',    'submit', handleLogin);
+    on('go-register',   'click',  () => showScreen('register'));
+    on('forgot-link',   'click',  () => { const r = document.getElementById('rec-email'); if (r) r.value = ''; openModal('m-recovery'); });
+    on('back-login',    'click',  () => showScreen('login'));
+    on('cancel-reg',    'click',  () => showScreen('login'));
+    on('register-form', 'submit', handleRegister);
 
-    document.getElementById('like-btn').addEventListener('click',    () => swipe('like'));
-    document.getElementById('dislike-btn').addEventListener('click', () => swipe('dislike'));
-    document.getElementById('super-btn').addEventListener('click',   () => swipe('super'));
+    on('back-ob',  'click',  handleLogout);
+    on('ob-form',  'submit', handleCompleteProfile);
+    on('ob-next',  'click',  obNext);
+    on('ob-prev',  'click',  obPrev);
+
+    on('like-btn',    'click', () => swipe('like'));
+    on('dislike-btn', 'click', () => swipe('dislike'));
+    on('super-btn',   'click', () => swipe('super'));
 
     initSolicitudModal();
 
-    document.getElementById('back-verify').addEventListener('click', () => goBack());
-    document.getElementById('back-admin').addEventListener('click',  () => goBack());
-    document.getElementById('back-trash').addEventListener('click',  () => goBack());
-    document.getElementById('wall-verify-btn').addEventListener('click', () => { showScreen('verify'); renderVerifyScreen(); });
+    on('back-verify',     'click', () => goBack());
+    on('back-admin',      'click', () => goBack());
+    on('back-trash',      'click', () => goBack());
+    on('wall-verify-btn', 'click', () => { showScreen('verify'); renderVerifyScreen(); });
 
-    document.getElementById('back-chat').addEventListener('click', () => {
+    on('back-chat', 'click', () => {
       if (chatRealtimeChannel) { sb.removeChannel(chatRealtimeChannel); chatRealtimeChannel = null; }
       goBack();
     });
 
-    document.getElementById('send-btn').addEventListener('click', sendMessage);
-    document.getElementById('chat-input').addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+    on('send-btn',   'click',    sendMessage);
+    on('chat-input', 'keypress', e => { if (e.key === 'Enter') sendMessage(); });
 
-    document.getElementById('edit-prof-btn').addEventListener('click', () => { fillEditForm(); showScreen('edit'); });
-    document.getElementById('del-acc-btn').addEventListener('click',   () => openModal('m-delete'));
-    document.getElementById('back-edit').addEventListener('click',   () => goBack());
-    document.getElementById('cancel-edit').addEventListener('click', () => goBack());
-    document.getElementById('edit-form').addEventListener('submit',  handleUpdate);
+    on('edit-prof-btn', 'click',  () => { fillEditForm(); showScreen('edit'); });
+    on('del-acc-btn',   'click',  () => openModal('m-delete'));
+    on('back-edit',     'click',  () => goBack());
+    on('cancel-edit',   'click',  () => goBack());
+    on('edit-form',     'submit', handleUpdate);
 
-    document.getElementById('chat-view-profile-btn')?.addEventListener('click', () => {
+    on('chat-view-profile-btn', 'click', () => {
       if (currentChatUserProfile) { renderViewMatchProfile(currentChatUserProfile, 'chat'); showScreen('view-match-profile'); }
     });
 
@@ -1758,16 +1761,16 @@
     const chatDropdown = document.getElementById('chat-dropdown');
     dotsBtn?.addEventListener('click', e => {
       e.stopPropagation();
-      chatDropdown.style.display = chatDropdown.style.display !== 'none' ? 'none' : 'block';
+      if (chatDropdown) chatDropdown.style.display = chatDropdown.style.display !== 'none' ? 'none' : 'block';
     });
     document.addEventListener('click', () => { if (chatDropdown) chatDropdown.style.display = 'none'; });
-    document.getElementById('chat-block-btn')?.addEventListener('click', () => {
+    on('chat-block-btn', 'click', () => {
       if (chatDropdown) chatDropdown.style.display = 'none';
       handleBlockToggle();
     });
 
-    document.getElementById('back-view-match').addEventListener('click', () => goBack());
-    document.getElementById('view-match-chat-btn').addEventListener('click', () => {
+    on('back-view-match',     'click', () => goBack());
+    on('view-match-chat-btn', 'click', () => {
       if (currentChatUserProfile) openChat(currentChatUserProfile, true, 'view-match-profile');
     });
   }

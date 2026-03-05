@@ -37,7 +37,9 @@
   window.pIdx                   = 0;
   window.matches                = [];
   window.convos                 = [];
-  window.trashedConvos          = new Set();
+  // FIX: cargar papelera desde localStorage para que persista entre navegaciones
+  const _savedTrash = JSON.parse(localStorage.getItem('lionmatch_trash') || '[]');
+  window.trashedConvos = new Set(_savedTrash);
   window.verifyPhotoDataURL     = null;
   window.obStep                 = 1;
   window.photoDataURL           = null;
@@ -303,7 +305,8 @@
   async function handleLogout() {
     closeSidebar();
     stopRealtime();
-    window._bootDone = false; // ← reemplaza "initialized = false" que era un bug
+    window._bootDone = false;
+    trashedConvos.clear(); saveTrash(); // limpiar papelera al cerrar sesión // ← reemplaza "initialized = false" que era un bug
     await sb.auth.signOut();
     user = null;
     showScreen('login');
@@ -695,7 +698,7 @@
         e.stopPropagation();
         const ok = await showConfirm({ icon: '🗑️', title: 'Eliminar conversación', msg: `Los mensajes con ${cv.u?.name?.split(' ')[0]} se ocultarán. El match se conserva.`, okText: 'Eliminar', okColor: '#f87171' });
         if (!ok) return;
-        trashedConvos.add(cv.u.user_id); updateTrashBadge(); renderConvos();
+        trashedConvos.add(cv.u.user_id); saveTrash(); updateTrashBadge(); renderConvos();
         toast('Conversación eliminada 🗑️', 'ok');
       });
     }
@@ -736,6 +739,10 @@
   /* ════════════════════════════════════════════════════
      11. PAPELERA
   ════════════════════════════════════════════════════ */
+  function saveTrash() {
+    localStorage.setItem('lionmatch_trash', JSON.stringify([...trashedConvos]));
+  }
+
   function updateTrashBadge() {
     const badge = document.getElementById('trash-badge'); if (!badge) return;
     const count = trashedConvos.size;
@@ -764,13 +771,13 @@
         : `<div style="width:50px;height:50px;border-radius:50%;background:var(--c-panel);flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:.7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
       div.innerHTML = avHtml + `<div style="flex:1;min-width:0"><div style="font-weight:700;color:var(--c-text);margin-bottom:.2rem">${escapeHtml(prof.name || '—')}</div><div style="font-size:.8rem;color:var(--c-muted)">Conversación oculta</div></div><div style="display:flex;flex-direction:column;gap:.5rem;flex-shrink:0"><button class="trash-restore-btn" style="padding:.4rem .75rem;border-radius:var(--r1);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399;font-size:.75rem;font-weight:700;cursor:pointer;font-family:var(--font-b)">↩ Restaurar</button><button class="trash-delete-btn" style="padding:.4rem .75rem;border-radius:var(--r1);background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.2);color:#f87171;font-size:.75rem;font-weight:700;cursor:pointer;font-family:var(--font-b)">🗑 Eliminar</button></div>`;
       div.querySelector('.trash-restore-btn').addEventListener('click', () => {
-        trashedConvos.delete(uid); updateTrashBadge();
+        trashedConvos.delete(uid); saveTrash(); updateTrashBadge();
         toast('Chat restaurado ✓', 'ok'); loadConvos(); renderTrashScreen();
       });
       div.querySelector('.trash-delete-btn').addEventListener('click', async () => {
         const ok = await showConfirm({ icon: '🗑️', title: 'Eliminar definitivamente', msg: '¿Eliminar este chat para siempre? Esta acción no se puede deshacer.', okText: 'Eliminar', okColor: '#f87171' });
         if (!ok) return;
-        trashedConvos.delete(uid); updateTrashBadge(); renderTrashScreen();
+        trashedConvos.delete(uid); saveTrash(); updateTrashBadge(); renderTrashScreen();
         toast('Chat eliminado 🗑️', 'ok');
       });
       list.appendChild(div);

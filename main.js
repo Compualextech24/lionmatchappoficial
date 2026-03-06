@@ -127,6 +127,18 @@
       }
     });
 
+    // ── Cerrar sesión si el usuario NO marcó "Mantener sesión" ─────
+    // En Android/móvil, cuando el usuario vuelve a la app desde background
+    // se dispara visibilitychange. Si no quiso mantener sesión, cerramos.
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        const keep = localStorage.getItem('lionmatch_keep_session');
+        if (keep === '0' && user) {
+          await sb.auth.signOut();
+        }
+      }
+    });
+
     // onAuthStateChange + INITIAL_SESSION maneja todo el arranque.
     // Esperamos hasta 400 ms para que Supabase dispare INITIAL_SESSION
     // antes de decidir mostrar el login (evita flash falso).
@@ -247,6 +259,7 @@
     if (!document.getElementById('age-confirm').checked) {
       toast('Confirma que eres mayor de edad', 'err'); return;
     }
+    const keepSession = document.getElementById('keep-session').checked;
     const btn = e.target.querySelector('[type=submit]');
     btn.classList.add('loading');
     try {
@@ -257,6 +270,7 @@
       });
       console.log('[Login] Respuesta Supabase:', { error, userId: data?.user?.id });
       if (error) throw error;
+      localStorage.setItem('lionmatch_keep_session', keepSession ? '1' : '0');
       window._bootDone = true;
       user = data.user;
       console.log('[Login] Cargando perfil...');

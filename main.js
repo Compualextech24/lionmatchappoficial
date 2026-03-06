@@ -128,8 +128,9 @@
     });
 
     // onAuthStateChange + INITIAL_SESSION maneja todo el arranque.
-    // Solo mostramos login si tras un tick no hay sesión detectada.
-    await new Promise(r => setTimeout(r, 0));
+    // Esperamos hasta 400 ms para que Supabase dispare INITIAL_SESSION
+    // antes de decidir mostrar el login (evita flash falso).
+    await new Promise(r => setTimeout(r, 400));
     if (!window._bootDone) showScreen('login', false);
   });
 
@@ -251,12 +252,21 @@
         password: document.getElementById('login-password').value,
       });
       if (error) throw error;
+      // Marcar _bootDone ANTES de loadProfile para que onAuthStateChange
+      // no duplique la navegación cuando SIGNED_IN se dispare.
       window._bootDone = true;
       user = data.user;
-      await loadProfile();
+      try {
+        await loadProfile();
+      } catch (profileErr) {
+        // loadProfile falló pero el login fue exitoso; continuamos con profile null.
+        console.warn('loadProfile error (non-fatal):', profileErr);
+        user.profile = null;
+      }
       toast('¡Bienvenido de nuevo!', 'ok');
       goHome();
-    } catch {
+    } catch (authErr) {
+      // Solo llegamos aquí si signInWithPassword lanzó error (credenciales malas).
       window._bootDone = false;
       showError('Correo o contraseña incorrectos.', 'Acceso denegado');
     } finally {
@@ -1117,9 +1127,9 @@
   async function loadProfile() {
     try {
       const { data, error } = await sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
-      if (error) { user.profile = null; return; }
+      if (error) throw error;
       user.profile = data || null;
-    } catch { user.profile = null; }
+    } catch (err) { user.profile = null; throw err; }
   }
 
   // ─── Helper compartido para no repetir el bloque lifestyle/música/intereses ──

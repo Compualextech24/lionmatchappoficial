@@ -1132,7 +1132,11 @@
   ════════════════════════════════════════════════════ */
   async function loadProfile() {
     try {
-      const { data, error } = await sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('loadProfile timeout')), 5000)
+      );
+      const query = sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+      const { data, error } = await Promise.race([query, timeout]);
       if (error) throw error;
       user.profile = data || null;
     } catch (err) { user.profile = null; throw err; }

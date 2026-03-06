@@ -78,9 +78,7 @@
     initForms();
     initBioCounters();
 
-    const splashMin = new Promise(r => setTimeout(r, 800));
-
-    /* ── FIX PRINCIPAL: manejo completo del ciclo de sesión ─────────
+    /* ── Manejo completo del ciclo de sesión ────────────────────────
        Supabase v2 emite estos eventos:
        · INITIAL_SESSION   → se dispara al cargar con sesión guardada
        · SIGNED_IN         → login manual o renovación exitosa
@@ -125,8 +123,6 @@
         window._bootDone = true;
         user = session.user;
         await loadProfile();
-        await splashMin;
-        hideSplash();
         goHome();
       }
     });
@@ -140,9 +136,6 @@
     }
 
     if (window._bootDone) return; // ya manejado por onAuthStateChange
-
-    await splashMin;
-    hideSplash();
 
     if (session) {
       window._bootDone = true;
@@ -176,17 +169,7 @@
   });
 
   /* ════════════════════════════════════════════════════
-     4. SPLASH
-  ════════════════════════════════════════════════════ */
-  function hideSplash() {
-    const s = document.getElementById('splash-screen');
-    if (!s) return;
-    s.classList.add('hide');
-    setTimeout(() => { s.style.display = 'none'; }, 700);
-  }
-
-  /* ════════════════════════════════════════════════════
-     5. NAVEGACIÓN CON HISTORIAL
+     4. NAVEGACIÓN CON HISTORIAL
   ════════════════════════════════════════════════════ */
   const ROOT_SCREENS = new Set(['login', 'register', 'onboarding', 'discovery']);
 

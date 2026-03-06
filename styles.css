@@ -94,12 +94,12 @@ body::before{
     var(--c-bg);
 }
 .login-inner{width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center}
-.logo-wrap{text-align:center;margin-bottom:2.5rem}
-.logo-icon{width:80px;height:80px;margin:0 auto 1rem;background:var(--grad);border-radius:var(--r3);display:flex;align-items:center;justify-content:center;box-shadow:var(--glow);animation:float 4s ease-in-out infinite}
-.logo-icon svg{width:38px;height:38px;fill:#fff}
+.logo-wrap{text-align:center;margin-bottom:1rem}
+.logo-icon{width:100px;height:100px;margin:0 auto 1rem;background:var(--grad);border-radius:var(--r3);display:flex;align-items:center;justify-content:center;box-shadow:var(--glow);animation:float 4s ease-in-out infinite}
+.logo-icon svg{width:48px;height:48px;fill:#fff}
 @keyframes float{0%,100%{transform:translateY(0) rotate(2deg)}50%{transform:translateY(-8px) rotate(-2deg)}}
-.app-title{font-family:var(--font-h);font-size:2.8rem;font-weight:900;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:.3rem}
-.app-sub{color:var(--c-muted);font-size:.95rem;font-weight:400}
+.app-title{font-family:var(--font-h);font-size:2.8rem;font-weight:900;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:.2rem}
+.app-sub{color:var(--c-muted);font-size:.95rem;font-weight:400;margin-bottom:0}
 
 /* Glass card */
 .glass-card{
@@ -653,6 +653,45 @@ body::before{
 .btn-blue:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 36px rgba(59,130,246,.5);
+}
+
+/* ════ SPLASH — eliminado, estilos vacíos ════ */
+#splash-screen{display:none!important}
+
+/* ════ LOGIN — inputs fondo blanco texto oscuro ════
+   Igual que en registro: texto siempre negro/oscuro,
+   ojito visible independientemente del contenido.
+══════════════════════════════════════════════════ */
+.glass-card .fg input,
+.glass-card .fg select {
+  background: rgba(255,255,255,.92);
+  color: #1a1028;
+  border-color: rgba(130,120,255,.3);
+}
+.glass-card .fg input::placeholder {
+  color: rgba(26,16,40,.38);
+}
+.glass-card .fg input:focus,
+.glass-card .fg select:focus {
+  background: #fff;
+  color: #1a1028;
+  border-color: var(--c-accent1);
+  box-shadow: 0 0 0 3px rgba(108,99,255,.15);
+}
+/* autofill de Chrome/Android — mantener texto oscuro */
+.glass-card .fg input:-webkit-autofill,
+.glass-card .fg input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1a1028 !important;
+  caret-color: #1a1028;
+  box-shadow: 0 0 0 1000px rgba(255,255,255,.95) inset !important;
+  border-color: rgba(130,120,255,.3);
+}
+/* Ojito siempre visible sobre fondo claro */
+.glass-card .pw-wrap .toggle-pw {
+  color: rgba(26,16,40,.5);
+}
+.glass-card .pw-wrap .toggle-pw:hover {
+  color: var(--c-accent1);
 }
 
 *::-webkit-scrollbar{display:none}*{scrollbar-width:none}

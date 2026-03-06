@@ -127,18 +127,6 @@
       }
     });
 
-    // ── Cerrar sesión si el usuario NO marcó "Mantener sesión" ─────
-    // En Android/móvil, cuando el usuario vuelve a la app desde background
-    // se dispara visibilitychange. Si no quiso mantener sesión, cerramos.
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        const keep = localStorage.getItem('lionmatch_keep_session');
-        if (keep === '0' && user) {
-          await sb.auth.signOut();
-        }
-      }
-    });
-
     // onAuthStateChange + INITIAL_SESSION maneja todo el arranque.
     // Esperamos hasta 400 ms para que Supabase dispare INITIAL_SESSION
     // antes de decidir mostrar el login (evita flash falso).
@@ -191,6 +179,12 @@
   /* ════════════════════════════════════════════════════
      6. REALTIME
   ════════════════════════════════════════════════════ */
+  // Timestamp del último fetch completo de convos (para evitar recargas innecesarias)
+  let _lastConvosLoad = 0;
+  const _CONVOS_TTL   = 30_000; // 30 segundos de cache
+
+  const _origLoadConvos = null; // placeholder, se sobreescribe abajo
+
   window.startRealtimeMessages = function () {
     stopRealtime();
     realtimeChannel = sb.channel('messages-list')
@@ -259,7 +253,6 @@
     if (!document.getElementById('age-confirm').checked) {
       toast('Confirma que eres mayor de edad', 'err'); return;
     }
-    const keepSession = document.getElementById('keep-session').checked;
     const btn = e.target.querySelector('[type=submit]');
     btn.classList.add('loading');
     try {
@@ -270,7 +263,6 @@
       });
       console.log('[Login] Respuesta Supabase:', { error, userId: data?.user?.id });
       if (error) throw error;
-      localStorage.setItem('lionmatch_keep_session', keepSession ? '1' : '0');
       window._bootDone = true;
       user = data.user;
       console.log('[Login] Cargando perfil...');
@@ -670,20 +662,24 @@
     });
 
     convos = Array.from(map.values()).filter(cv => !trashedConvos.has(cv.u?.user_id));
+    _lastConvosLoad = Date.now();
     renderConvos();
   }
 
   function renderConvos() {
     const list = document.getElementById('conv-list');
     list.innerHTML = '';
-    if (!convos.length) {
+    // Re-aplicar filtro de papelera sobre el array en memoria
+    // (necesario cuando se mueve a papelera sin hacer re-fetch)
+    const visibleConvos = convos.filter(cv => !trashedConvos.has(cv.u?.user_id));
+    if (!visibleConvos.length) {
       list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>Sin conversaciones</h3><p>Cuando hagas match aparecerán aquí</p></div>`;
       return;
     }
-    const requests      = convos.filter(cv => cv.hasRequest && !cv.hasActive);
-    const activeConvs   = convos.filter(cv => cv.hasActive);
-    const pendingConvs  = convos.filter(cv => !cv.hasActive && !cv.hasRequest && cv.hasPending && !cv.hasRejected);
-    const rejectedConvs = convos.filter(cv => cv.hasRejected && !cv.hasActive);
+    const requests      = visibleConvos.filter(cv => cv.hasRequest && !cv.hasActive);
+    const activeConvs   = visibleConvos.filter(cv => cv.hasActive);
+    const pendingConvs  = visibleConvos.filter(cv => !cv.hasActive && !cv.hasRequest && cv.hasPending && !cv.hasRejected);
+    const rejectedConvs = visibleConvos.filter(cv => cv.hasRejected && !cv.hasActive);
 
     const frag = document.createDocumentFragment();
     if (requests.length) {
@@ -744,7 +740,12 @@
         e.stopPropagation();
         const ok = await showConfirm({ icon: '🗑️', title: 'Eliminar conversación', msg: `Los mensajes con ${escapeHtml(cv.u?.name?.split(' ')[0] || '')} se ocultarán. El match se conserva.`, okText: 'Eliminar', okColor: '#f87171' });
         if (!ok) return;
-        trashedConvos.add(cv.u.user_id); saveTrash(); updateTrashBadge(); renderConvos();
+        trashedConvos.add(cv.u.user_id);
+        saveTrash();
+        updateTrashBadge();
+        // Actualizar array en memoria para que renderConvos refleje el cambio inmediatamente
+        convos = convos.filter(c => c.u?.user_id !== cv.u.user_id);
+        renderConvos();
         toast('Conversación eliminada 🗑️', 'ok');
       });
     }
@@ -778,6 +779,9 @@
   async function deleteRejectedConv(oid) {
     try {
       await sb.from('messages').delete().or(`and(sender_id.eq.${user.id},receiver_id.eq.${oid}),and(sender_id.eq.${oid},receiver_id.eq.${user.id})`);
+      // Actualizar array en memoria antes del re-fetch para UI instantánea
+      convos = convos.filter(c => c.u?.user_id !== oid);
+      renderConvos();
       toast('Conversación eliminada', 'ok'); loadConvos();
     } catch { toast('Error al eliminar', 'err'); }
   }
@@ -1766,7 +1770,15 @@
       item.addEventListener('click', () => {
         const s = item.dataset.s; closeSidebar();
         if      (s === 'discovery') { showScreen('discovery'); loadProfiles(); }
-        else if (s === 'messages')  { showScreen('messages');  Promise.all([loadMatches(), loadConvos()]); }
+        else if (s === 'messages')  {
+          showScreen('messages');
+          // Solo recargar si los datos tienen más de 30s o están vacíos
+          if (Date.now() - _lastConvosLoad > _CONVOS_TTL || !convos.length) {
+            Promise.all([loadMatches(), loadConvos()]);
+          } else {
+            renderConvos(); // re-render instantáneo con datos en cache
+          }
+        }
         else if (s === 'profile')   { showScreen('profile');   renderProfile(); }
         else if (s === 'matches')   { showScreen('matches');   loadMatchesPage(); }
         else if (s === 'verify')    { showScreen('verify');    renderVerifyScreen(); }

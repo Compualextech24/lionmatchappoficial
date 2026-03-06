@@ -94,12 +94,12 @@ body::before{
     var(--c-bg);
 }
 .login-inner{width:100%;max-width:440px;display:flex;flex-direction:column;align-items:center}
-.logo-wrap{text-align:center;margin-bottom:.35rem}
-.logo-icon{width:100px;height:100px;margin:0 auto 1rem;background:var(--grad);border-radius:var(--r3);display:flex;align-items:center;justify-content:center;box-shadow:var(--glow);animation:float 4s ease-in-out infinite}
-.logo-icon svg{width:48px;height:48px;fill:#fff}
+.logo-wrap{text-align:center;margin-bottom:.3rem}
+.logo-img{width:110px;height:110px;object-fit:contain;margin:0 auto .75rem;display:block;animation:float 4s ease-in-out infinite}
+.logo-icon{display:none}
 @keyframes float{0%,100%{transform:translateY(0) rotate(2deg)}50%{transform:translateY(-8px) rotate(-2deg)}}
 .app-title{font-family:var(--font-h);font-size:2.8rem;font-weight:900;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:.2rem}
-.app-sub{color:var(--c-muted);font-size:.95rem;font-weight:400;margin-bottom:0}
+.app-sub{color:var(--c-muted);font-size:.95rem;font-weight:400;margin-bottom:.2rem}
 
 /* Glass card */
 .glass-card{

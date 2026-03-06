@@ -127,45 +127,10 @@
       }
     });
 
-    let session = null;
-    try {
-      const { data } = await sb.auth.getSession();
-      session = data?.session || null;
-    } catch (e) {
-      console.warn('getSession error:', e);
-    }
-
-    if (window._bootDone) return; // ya manejado por onAuthStateChange
-
-    if (session) {
-      window._bootDone = true;
-      user = session.user;
-      await loadProfile();
-      goHome();
-    } else {
-      showScreen('login', false);
-    }
-  });
-
-  /* ── FIX: al volver a la pestaña, verificar sesión activa ────────
-     Cuando el usuario regresa después de mucho tiempo, comprobamos
-     que la sesión siga siendo válida. Si no lo es, redirigimos.
-  ────────────────────────────────────────────────────────────────── */
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState !== 'visible' || !window._bootDone) return;
-    try {
-      const { data, error } = await sb.auth.getSession();
-      if (error || !data?.session) {
-        window._bootDone = false;
-        user = null;
-        stopRealtime();
-        navStack = [];
-        showScreen('login', false);
-        toast('Sesión expirada. Por favor vuelve a ingresar.', 'err');
-      } else {
-        user = data.session.user; // mantener user actualizado
-      }
-    } catch { /* silencioso */ }
+    // onAuthStateChange + INITIAL_SESSION maneja todo el arranque.
+    // Solo mostramos login si tras un tick no hay sesión detectada.
+    await new Promise(r => setTimeout(r, 0));
+    if (!window._bootDone) showScreen('login', false);
   });
 
   /* ════════════════════════════════════════════════════

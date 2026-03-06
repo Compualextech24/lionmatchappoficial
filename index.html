@@ -286,8 +286,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <span class="h-title">LionMatch</span>
-      <button class="icon-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <button class="icon-btn" id="security-btn" title="Políticas de seguridad">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       </button>
     </header>
     <div class="discovery-wrap">
@@ -773,8 +773,15 @@
   ══════════════════════════════════════ -->
   <div id="sidebar" class="sidebar">
     <div class="sidebar-head">
-      <div class="sl">LionMatch</div>
-      <p>León, Guanajuato</p>
+      <div class="sb-user-row">
+        <div class="sb-avatar" id="sb-avatar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="sb-user-info">
+          <div class="sb-user-name" id="sb-user-name">—</div>
+          <div class="sb-user-email" id="sb-user-email">—</div>
+        </div>
+      </div>
       <button class="close-sb" id="close-sb">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -946,9 +953,55 @@
     <button class="lb-close" onclick="closeLightbox()">✕</button>
   </div>
 
+  <!-- Modal Políticas de Seguridad -->
+  <div class="modal-overlay" id="m-security">
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-stripe" style="background:linear-gradient(135deg,#6c63ff,#d946ef)"></div>
+      <div class="modal-body" style="flex-direction:column;gap:1rem">
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div class="modal-icon" style="background:rgba(108,99,255,.12);flex-shrink:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" width="22" height="22"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h4 style="font-size:1.05rem;color:var(--c-text)">Políticas de Seguridad</h4>
+        </div>
+        <div style="font-size:.88rem;color:var(--c-muted);line-height:1.7;display:flex;flex-direction:column;gap:.75rem">
+          <p>🤝 <strong style="color:var(--c-text)">Primera cita en lugar público.</strong> Elige cafeterías, plazas o restaurantes concurridos. Evita lugares solitarios o privados para el primer encuentro.</p>
+          <p>📱 <strong style="color:var(--c-text)">Avisa a alguien de confianza.</strong> Dile a un familiar o amigo con quién te vas a reunir, dónde y a qué hora. Comparte tu ubicación en tiempo real si puedes.</p>
+          <p>🚗 <strong style="color:var(--c-text)">Tu propio transporte.</strong> Usa tu coche o un servicio de transporte independiente. No aceptes que te lleven o recojan en el primer encuentro.</p>
+          <p>🔒 <strong style="color:var(--c-text)">Cuida tu información personal.</strong> No compartas tu domicilio exacto, lugar de trabajo ni datos bancarios con personas que acabas de conocer.</p>
+          <p>🚨 <strong style="color:var(--c-text)">Confía en tu instinto.</strong> Si algo se siente mal, está bien retirarte. Tu seguridad es lo primero. En caso de emergencia llama al <strong style="color:#f87171">911</strong>.</p>
+          <p style="font-size:.78rem;color:var(--c-dim);border-top:1px solid rgba(130,120,255,.1);padding-top:.75rem">LionMatch se preocupa por tu bienestar. Reporta cualquier comportamiento sospechoso desde el perfil del usuario.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary btn-sm" id="m-security-ok">Entendido ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Notificación personalizada -->
+  <div class="modal-overlay" id="m-notif" style="z-index:9999">
+    <div class="modal-box" style="max-width:340px">
+      <div class="modal-stripe" style="background:linear-gradient(135deg,#6c63ff,#a78bfa)"></div>
+      <div class="modal-body" style="gap:.75rem">
+        <div class="modal-icon" style="background:rgba(108,99,255,.12);flex-shrink:0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="modal-txt">
+          <h4 id="m-notif-title" style="font-size:.95rem">Nuevo mensaje</h4>
+          <p id="m-notif-msg" style="font-size:.83rem;margin-top:.25rem"></p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" id="m-notif-close">Cerrar</button>
+        <button class="btn btn-primary btn-sm" id="m-notif-open">Ver chat</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /.app -->
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

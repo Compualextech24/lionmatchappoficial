@@ -226,7 +226,8 @@
         event: 'INSERT', schema: 'public', table: 'messages',
         filter: `sender_id=eq.${oid}`
       }, (payload) => {
-        if (payload.new.receiver_id === user.id) {
+        // Solo agregar mensajes del OTRO usuario — los propios ya los agrega sendMessage()
+        if (payload.new.receiver_id === user.id && payload.new.sender_id !== user.id) {
           appendMessage(payload.new);
           maybeNotify(payload.new, currentChatUserProfile);
         }
@@ -871,9 +872,6 @@
       try { localStorage.setItem(key, newState ? 'on' : 'off'); } catch { /* storage lleno */ }
       updateBellUI(newState, btn, icon);
       toast(newState ? 'Notificaciones activadas 🔔' : 'Notificaciones silenciadas 🔕', 'ok');
-      if (newState && 'Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission();
-      }
     };
   }
 
@@ -892,13 +890,20 @@
   }
 
   function maybeNotify(msg, senderProfile) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const key  = `notif_chat_${msg.sender_id}`;
     const isOn = localStorage.getItem(key) !== 'off';
     if (!isOn) return;
     if (document.visibilityState === 'visible' && currentChatUserId === msg.sender_id) return;
     const name = senderProfile?.name || 'Nuevo mensaje';
-    new Notification(`💬 ${name}`, { body: msg.content, icon: senderProfile?.photo_url || '/favicon.ico', tag: `chat_${msg.sender_id}` });
+    // Notificación personalizada in-app (sin popup nativo del navegador)
+    const titleEl = document.getElementById('m-notif-title');
+    const msgEl   = document.getElementById('m-notif-msg');
+    if (titleEl) titleEl.textContent = `💬 ${name}`;
+    if (msgEl)   msgEl.textContent   = msg.content.length > 60 ? msg.content.slice(0, 60) + '…' : msg.content;
+    openModal('m-notif');
+    // Guardar sender para el botón "Ver chat"
+    window._notifSenderId = msg.sender_id;
+    window._notifSenderProfile = senderProfile;
   }
 
   async function loadChatMsgs(oid) {
@@ -1766,6 +1771,15 @@
     const isAdmin  = user?.email === ADMIN_EMAIL;
     const adminNav = document.getElementById('nav-admin');
     if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
+    // Actualizar sidebar con datos del usuario en sesión
+    const nameEl   = document.getElementById('sb-user-name');
+    const emailEl  = document.getElementById('sb-user-email');
+    const avatarEl = document.getElementById('sb-avatar');
+    if (nameEl)  nameEl.textContent  = user?.profile?.name || 'Mi cuenta';
+    if (emailEl) emailEl.textContent = user?.email || '';
+    if (avatarEl && user?.profile?.photo_url) {
+      avatarEl.innerHTML = `<img src="${user.profile.photo_url}" alt="avatar">`;
+    }
   }
 
   /* ════════════════════════════════════════════════════
@@ -1780,6 +1794,17 @@
     on('back-login',    'click',  () => showScreen('login'));
     on('cancel-reg',    'click',  () => showScreen('login'));
     on('register-form', 'submit', handleRegister);
+
+    // Políticas de seguridad
+    on('security-btn',  'click',  () => openModal('m-security'));
+    on('m-security-ok', 'click',  () => closeModal('m-security'));
+
+    // Modal notificación personalizada
+    on('m-notif-close', 'click',  () => closeModal('m-notif'));
+    on('m-notif-open',  'click',  () => {
+      closeModal('m-notif');
+      if (window._notifSenderProfile) openChat(window._notifSenderProfile, true, 'messages');
+    });
 
     on('back-ob',  'click',  handleLogout);
     on('ob-form',  'submit', handleCompleteProfile);

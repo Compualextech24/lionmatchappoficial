@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════
    LionMatch — main.js  (archivo único consolidado)
-   Versión corregida: bug bootDone/initialized, canales
-   duplicados, deduplicación de render, optimizaciones.
+   FIXES v2: TOKEN_REFRESH_FAILED, closeLightbox global,
+   INITIAL_SESSION, Promise.all paralelo, obStep reset,
+   rAF para animaciones, selectedInterests reset.
 ═══════════════════════════════════════════════════════ */
 (async function () {
   'use strict';
@@ -12,7 +13,13 @@
   const SB_URL = 'https://fjevgfyqqsfankvledpl.supabase.co';
   const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqZXZnZnlxcXNmYW5rdmxlZHBsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2Nzk0NjIsImV4cCI6MjA4NjI1NTQ2Mn0.AmysLsRq_KBXYculm0Nyw3a0abWLQ8zTt-2OSo-6PSA';
 
-  window.sb          = window.supabase.createClient(SB_URL, SB_KEY);
+  window.sb          = window.supabase.createClient(SB_URL, SB_KEY, {
+    auth: {
+      persistSession:    true,
+      autoRefreshToken:  true,
+      detectSessionInUrl: true,
+    }
+  });
   window.ADMIN_EMAIL = 'compualextech24@gmail.com';
   window.MSG_LIMIT   = 5;
 
@@ -37,9 +44,8 @@
   window.pIdx                   = 0;
   window.matches                = [];
   window.convos                 = [];
-  // FIX: cargar papelera desde localStorage para que persista entre navegaciones
-  const _savedTrash = JSON.parse(localStorage.getItem('lionmatch_trash') || '[]');
-  window.trashedConvos = new Set(_savedTrash);
+  const _savedTrash = (() => { try { return JSON.parse(localStorage.getItem('lionmatch_trash') || '[]'); } catch { return []; } })();
+  window.trashedConvos          = new Set(_savedTrash);
   window.verifyPhotoDataURL     = null;
   window.obStep                 = 1;
   window.photoDataURL           = null;
@@ -56,16 +62,7 @@
   window.chatRealtimeChannel    = null;
   window._successCb             = null;
   window.navStack               = [];
-
-  // ─── FIX PRINCIPAL ───────────────────────────────────
-  // bootDone ahora es window._bootDone para que handleLogin
-  // pueda accederla y evitar la doble ejecución de goHome().
-  // Antes era "let bootDone" local + "initialized" en auth.js
-  // (variable inexistente) → goHome() se ejecutaba DOS VECES
-  // en cada login manual: una desde handleLogin y otra desde
-  // onAuthStateChange (que veía bootDone = false siempre).
-  // ─────────────────────────────────────────────────────
-  window._bootDone = false;
+  window._bootDone              = false;
 
   /* ════════════════════════════════════════════════════
      3. INIT
@@ -83,7 +80,28 @@
 
     const splashMin = new Promise(r => setTimeout(r, 800));
 
+    /* ── FIX PRINCIPAL: manejo completo del ciclo de sesión ─────────
+       Supabase v2 emite estos eventos:
+       · INITIAL_SESSION   → se dispara al cargar con sesión guardada
+       · SIGNED_IN         → login manual o renovación exitosa
+       · TOKEN_REFRESHED   → el access token fue renovado en background
+       · TOKEN_REFRESH_FAILED → la renovación falló (sesión expirada)
+       · SIGNED_OUT        → logout explícito
+       ──────────────────────────────────────────────────────────────── */
     sb.auth.onAuthStateChange(async (event, session) => {
+
+      // ── Sesión expirada sin posibilidad de renovar ───────────────
+      if (event === 'TOKEN_REFRESH_FAILED') {
+        window._bootDone = false;
+        user = null;
+        stopRealtime();
+        navStack = [];
+        showScreen('login', false);
+        toast('Sesión expirada. Por favor vuelve a ingresar.', 'err');
+        return;
+      }
+
+      // ── Logout explícito ─────────────────────────────────────────
       if (event === 'SIGNED_OUT') {
         window._bootDone = false;
         user = null;
@@ -92,8 +110,18 @@
         showScreen('login', false);
         return;
       }
-      if (window._bootDone) return; // ← ya arrancado por handleLogin o getSession
-      if (event === 'SIGNED_IN' && session) {
+
+      // ── Token renovado en background → actualizar user ───────────
+      if (event === 'TOKEN_REFRESHED' && session) {
+        user = session.user;
+        return;
+      }
+
+      // ── Ya arrancado por getSession() o handleLogin() → ignorar ──
+      if (window._bootDone) return;
+
+      // ── Primera sesión al cargar (INITIAL_SESSION o SIGNED_IN) ───
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
         window._bootDone = true;
         user = session.user;
         await loadProfile();
@@ -111,7 +139,7 @@
       console.warn('getSession error:', e);
     }
 
-    if (window._bootDone) return;
+    if (window._bootDone) return; // ya manejado por onAuthStateChange
 
     await splashMin;
     hideSplash();
@@ -124,6 +152,27 @@
     } else {
       showScreen('login', false);
     }
+  });
+
+  /* ── FIX: al volver a la pestaña, verificar sesión activa ────────
+     Cuando el usuario regresa después de mucho tiempo, comprobamos
+     que la sesión siga siendo válida. Si no lo es, redirigimos.
+  ────────────────────────────────────────────────────────────────── */
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || !window._bootDone) return;
+    try {
+      const { data, error } = await sb.auth.getSession();
+      if (error || !data?.session) {
+        window._bootDone = false;
+        user = null;
+        stopRealtime();
+        navStack = [];
+        showScreen('login', false);
+        toast('Sesión expirada. Por favor vuelve a ingresar.', 'err');
+      } else {
+        user = data.session.user; // mantener user actualizado
+      }
+    } catch { /* silencioso */ }
   });
 
   /* ════════════════════════════════════════════════════
@@ -155,7 +204,7 @@
     if (navStack.length === 0) return;
     const prev = navStack.pop();
     showScreen(prev, false);
-    if      (prev === 'messages') { loadMatches(); loadConvos(); }
+    if      (prev === 'messages') { Promise.all([loadMatches(), loadConvos()]); }
     else if (prev === 'matches')  { loadMatchesPage(); }
     else if (prev === 'profile')  { renderProfile(); }
   };
@@ -168,6 +217,10 @@
       loadProfiles();
       startRealtimeMessages();
     } else {
+      // FIX: resetear estado del onboarding al entrar
+      obStep = 1;
+      selectedInterests = [];
+      photoDataURL = null; photoDataURL2 = null; photoDataURL3 = null; photoDataURL4 = null;
       showScreen('onboarding', false);
     }
   };
@@ -183,7 +236,7 @@
         filter: `receiver_id=eq.${user.id}`
       }, (payload) => {
         const scr = document.querySelector('.screen.active');
-        if (scr?.id === 'messages-screen') { loadMatches(); loadConvos(); }
+        if (scr?.id === 'messages-screen') { Promise.all([loadMatches(), loadConvos()]); }
         if (scr?.id === 'chat-screen' && payload.new.sender_id === currentChatUserId) {
           appendMessage(payload.new);
         }
@@ -198,7 +251,7 @@
         const scr = document.querySelector('.screen.active');
         if (payload.new.status === 'active' && payload.old.status === 'pending') {
           toast('🎉 ¡Aceptaron tu solicitud!', 'ok');
-          if (scr?.id === 'messages-screen') { loadMatches(); loadConvos(); }
+          if (scr?.id === 'messages-screen') { Promise.all([loadMatches(), loadConvos()]); }
           if (scr?.id === 'chat-screen' && payload.new.receiver_id === currentChatUserId) {
             currentChatIsActive = true;
             const inp = document.getElementById('chat-input');
@@ -246,13 +299,10 @@
     btn.classList.add('loading');
     try {
       const { data, error } = await sb.auth.signInWithPassword({
-        email:    document.getElementById('login-email').value,
+        email:    document.getElementById('login-email').value.trim(),
         password: document.getElementById('login-password').value,
       });
       if (error) throw error;
-      // ─── FIX: marcar _bootDone ANTES de goHome() para que
-      // onAuthStateChange (que llega poco después) lo vea y no
-      // ejecute goHome() por segunda vez. ────────────────────
       window._bootDone = true;
       user = data.user;
       await loadProfile();
@@ -306,7 +356,7 @@
     closeSidebar();
     stopRealtime();
     window._bootDone = false;
-    trashedConvos.clear(); saveTrash(); // limpiar papelera al cerrar sesión // ← reemplaza "initialized = false" que era un bug
+    trashedConvos.clear(); saveTrash(); updateTrashBadge();
     await sb.auth.signOut();
     user = null;
     showScreen('login');
@@ -384,30 +434,42 @@
     const p = profiles[pIdx];
     const card = document.createElement('div');
     card.className = 'swipe-card';
-    if (p.photo_url) card.innerHTML = `<img src="${p.photo_url}" alt="${p.name}" draggable="false" crossorigin="anonymous">`;
+    if (p.photo_url) card.innerHTML = `<img src="${p.photo_url}" alt="${escapeHtml(p.name)}" draggable="false" crossorigin="anonymous" loading="eager">`;
     else             card.innerHTML = `<div class="no-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
-    const tags      = p.interests ? p.interests.split(',').slice(0, 3).map(t => `<span class="card-tag">${t.trim()}</span>`).join('') : '';
+    const tags      = p.interests ? p.interests.split(',').slice(0, 3).map(t => `<span class="card-tag">${escapeHtml(t.trim())}</span>`).join('') : '';
     const meta      = [p.gender, p.age ? `${p.age} años` : ''].filter(Boolean).join(' · ');
     const veriBadge = p.verification_status === 'approved'
       ? '<span style="display:inline-flex;align-items:center;gap:.2rem;background:rgba(52,211,153,.15);border:1px solid rgba(52,211,153,.3);border-radius:50px;padding:.1rem .5rem;font-size:.68rem;font-weight:700;color:#34d399;margin-left:.35rem">✓</span>' : '';
-    card.innerHTML += `<div class="card-info"><h3>${escapeHtml(p.name)}${veriBadge}</h3>${meta ? `<div class="card-meta">${meta}</div>` : ''}<p>${p.bio ? p.bio.slice(0, 80) + (p.bio.length > 80 ? '…' : '') : 'León, Guanajuato'}</p>${tags}</div><div class="hint hint-like">LIKE</div><div class="hint hint-nope">NOPE</div>`;
+    card.innerHTML += `<div class="card-info"><h3>${escapeHtml(p.name)}${veriBadge}</h3>${meta ? `<div class="card-meta">${meta}</div>` : ''}<p>${p.bio ? escapeHtml(p.bio.slice(0, 80)) + (p.bio.length > 80 ? '…' : '') : 'León, Guanajuato'}</p>${tags}</div><div class="hint hint-like">LIKE</div><div class="hint hint-nope">NOPE</div>`;
     stack.appendChild(card);
     addDragHandlers(card);
   }
 
   function addDragHandlers(card) {
     let sx = 0, cx = 0, drag = false;
-    const start = e => { drag = true; sx = e.touches ? e.touches[0].clientX : e.clientX; card.style.transition = 'none'; };
-    const move  = e => {
+    // FIX: usar rAF para las animaciones de drag → evita Forced Reflow
+    let rafId = null;
+    const start = e => {
+      drag = true;
+      sx = e.touches ? e.touches[0].clientX : e.clientX;
+      cx = sx;
+      card.style.transition = 'none';
+    };
+    const move = e => {
       if (!drag) return;
       cx = e.touches ? e.touches[0].clientX : e.clientX;
-      const d = cx - sx;
-      card.style.transform = `translateX(${d}px) rotate(${d * .07}deg)`;
-      card.querySelector('.hint-like').classList.toggle('show', d > 60);
-      card.querySelector('.hint-nope').classList.toggle('show', d < -60);
+      if (rafId) return; // throttle con rAF
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const d = cx - sx;
+        card.style.transform = `translateX(${d}px) rotate(${d * .07}deg)`;
+        card.querySelector('.hint-like').classList.toggle('show', d > 60);
+        card.querySelector('.hint-nope').classList.toggle('show', d < -60);
+      });
     };
     const end = () => {
       if (!drag) return; drag = false;
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
       const d = cx - sx;
       card.style.transition = 'transform .3s ease';
       if (d > 100)       swipe('like', card);
@@ -446,7 +508,7 @@
   function openSolicitudModal(p, cardEl) {
     pendingSwipeProfile = p; pendingSwipeCard = cardEl;
     const wrap = document.getElementById('sol-av-wrap');
-    if (p.photo_url) { wrap.innerHTML = `<img src="${p.photo_url}" class="sol-av" alt="${p.name}">`; wrap.className = ''; }
+    if (p.photo_url) { wrap.innerHTML = `<img src="${p.photo_url}" class="sol-av" alt="${escapeHtml(p.name)}">`; wrap.className = ''; }
     else             { wrap.className = 'sol-av-ph'; wrap.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`; }
     document.getElementById('sol-name').textContent = p.name || '—';
     document.getElementById('sol-meta').textContent = [p.gender, p.age ? `${p.age} años` : ''].filter(Boolean).join(' · ') || 'León, Gto';
@@ -534,15 +596,17 @@
       row.innerHTML = `<p style="color:var(--c-muted);font-size:.83rem;padding:.5rem 0">Sin matches aún</p>`;
       return;
     }
+    const frag = document.createDocumentFragment();
     matches.forEach(m => {
       const u = m._other; if (!u) return;
       const div = document.createElement('div');
       div.className = 'match-bubble';
-      if (u.photo_url) div.innerHTML = `<img src="${u.photo_url}" class="match-av" alt="${u.name}"><span>${u.name?.split(' ')[0]}</span>`;
-      else             div.innerHTML = `<div class="match-av-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span>${u.name?.split(' ')[0] || '?'}</span>`;
+      if (u.photo_url) div.innerHTML = `<img src="${u.photo_url}" class="match-av" alt="${escapeHtml(u.name)}" loading="lazy"><span>${escapeHtml(u.name?.split(' ')[0] || '')}</span>`;
+      else             div.innerHTML = `<div class="match-av-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span>${escapeHtml(u.name?.split(' ')[0] || '?')}</span>`;
       div.addEventListener('click', () => openChat(u, true, 'messages'));
-      row.appendChild(div);
+      frag.appendChild(div);
     });
+    row.appendChild(frag);
   }
 
   async function loadMatchesPage() {
@@ -567,16 +631,18 @@
         return { ...m, _other: profMap[oid] || null };
       }).filter(m => m._other);
       countLabel.textContent = `${enriched.length} match${enriched.length !== 1 ? 'es' : ''}`;
-      grid.innerHTML = '';
+      const frag = document.createDocumentFragment();
       enriched.forEach(m => {
         const p = m._other;
         const isVerified = p.verification_status === 'approved';
         const card = document.createElement('div');
         card.className = 'match-card' + (isVerified ? ' verified-match' : '');
-        card.innerHTML = `${p.photo_url ? `<img src="${p.photo_url}" class="match-card-img" alt="${escapeHtml(p.name)}" draggable="false">` : `<div class="match-card-no-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`}<div class="match-card-badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div><div class="match-card-overlay"><div class="match-card-name">${escapeHtml(p.name || '?')}</div><div class="match-card-meta">${[p.gender, p.age ? p.age + ' años' : ''].filter(Boolean).join(' · ') || 'León, Gto'}</div></div><div class="match-card-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></div>`;
+        card.innerHTML = `${p.photo_url ? `<img src="${p.photo_url}" class="match-card-img" alt="${escapeHtml(p.name)}" draggable="false" loading="lazy">` : `<div class="match-card-no-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`}<div class="match-card-badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div><div class="match-card-overlay"><div class="match-card-name">${escapeHtml(p.name || '?')}</div><div class="match-card-meta">${[p.gender, p.age ? p.age + ' años' : ''].filter(Boolean).join(' · ') || 'León, Gto'}</div></div><div class="match-card-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></div>`;
         card.addEventListener('click', () => { renderViewMatchProfile(p, 'matches'); showScreen('view-match-profile'); });
-        grid.appendChild(card);
+        frag.appendChild(card);
       });
+      grid.innerHTML = '';
+      grid.appendChild(frag);
     } catch (err) {
       console.error(err);
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--c-muted)">Error al cargar matches</div>`;
@@ -590,7 +656,6 @@
     const list = document.getElementById('conv-list');
     list.innerHTML = ['','',''].map(() => `<div class="conv-skeleton"><div class="skel skel-av"></div><div class="skel-lines"><div class="skel skel-line1"></div><div class="skel skel-line2"></div></div></div>`).join('');
 
-    // FIX: reducido de 150 a 60 para no saturar la red
     const { data: msgData, error } = await sb.from('messages')
       .select('id,sender_id,receiver_id,content,status,created_at')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
@@ -641,22 +706,24 @@
     const pendingConvs  = convos.filter(cv => !cv.hasActive && !cv.hasRequest && cv.hasPending && !cv.hasRejected);
     const rejectedConvs = convos.filter(cv => cv.hasRejected && !cv.hasActive);
 
+    const frag = document.createDocumentFragment();
     if (requests.length) {
-      const label = document.createElement('div'); label.className = 'section-label'; label.innerHTML = '💌 Solicitudes recibidas'; list.appendChild(label);
-      requests.forEach(cv => list.appendChild(buildRequestCard(cv)));
+      const label = document.createElement('div'); label.className = 'section-label'; label.innerHTML = '💌 Solicitudes recibidas'; frag.appendChild(label);
+      requests.forEach(cv => frag.appendChild(buildRequestCard(cv)));
     }
     if (activeConvs.length) {
-      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = requests.length ? '1.25rem' : '0'; label.textContent = 'Chats activos'; list.appendChild(label);
-      activeConvs.forEach(cv => list.appendChild(buildConvItem(cv, 'active')));
+      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = requests.length ? '1.25rem' : '0'; label.textContent = 'Chats activos'; frag.appendChild(label);
+      activeConvs.forEach(cv => frag.appendChild(buildConvItem(cv, 'active')));
     }
     if (pendingConvs.length) {
-      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = '1.25rem'; label.textContent = '⏳ Esperando respuesta'; list.appendChild(label);
-      pendingConvs.forEach(cv => list.appendChild(buildConvItem(cv, 'pending')));
+      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = '1.25rem'; label.textContent = '⏳ Esperando respuesta'; frag.appendChild(label);
+      pendingConvs.forEach(cv => frag.appendChild(buildConvItem(cv, 'pending')));
     }
     if (rejectedConvs.length) {
-      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = '1.25rem'; label.textContent = '❌ Sin match'; list.appendChild(label);
-      rejectedConvs.forEach(cv => list.appendChild(buildConvItem(cv, 'rejected')));
+      const label = document.createElement('div'); label.className = 'section-label'; label.style.marginTop = '1.25rem'; label.textContent = '❌ Sin match'; frag.appendChild(label);
+      rejectedConvs.forEach(cv => frag.appendChild(buildConvItem(cv, 'rejected')));
     }
+    list.appendChild(frag);
   }
 
   function buildRequestCard(cv) {
@@ -664,7 +731,7 @@
     const div = document.createElement('div');
     div.className = 'request-card';
     const avHtml = cv.u?.photo_url
-      ? `<img src="${cv.u.photo_url}" class="req-av" alt="${cv.u?.name}">`
+      ? `<img src="${cv.u.photo_url}" class="req-av" alt="${escapeHtml(cv.u?.name || '')}" loading="lazy">`
       : `<div class="req-av-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
     div.innerHTML = `<div class="request-card-head">${avHtml}<div class="req-info"><h4>${escapeHtml(cv.u?.name || '—')}</h4><p>${[cv.u?.gender, cv.u?.age ? cv.u.age + ' años' : ''].filter(Boolean).join(' · ') || 'León, Gto'}</p></div></div><div class="req-msg">"${escapeHtml(msg?.content || '')}"</div><div class="req-actions"><button class="btn btn-danger" data-reject="${msg?.id}" data-sender="${cv.u?.user_id}">✕ Rechazar</button><button class="btn btn-success" data-accept="${msg?.id}" data-sender="${cv.u?.user_id}">✓ Aceptar</button></div>`;
     div.querySelector('[data-accept]').addEventListener('click', async function () { this.classList.add('loading'); await acceptRequest(this.dataset.sender, parseInt(this.dataset.accept)); });
@@ -680,7 +747,7 @@
     const div = document.createElement('div');
     div.className = 'conv-item' + (isPending ? ' pending-conv' : '') + (isRejected ? ' rejected-conv' : '');
     const avHtml = cv.u?.photo_url
-      ? `<img src="${cv.u.photo_url}" class="conv-av" alt="${cv.u?.name}">`
+      ? `<img src="${cv.u.photo_url}" class="conv-av" alt="${escapeHtml(cv.u?.name || '')}" loading="lazy">`
       : `<div class="conv-av-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
     const dotHtml = isPending  ? '<div class="pending-dot"></div>'
                   : isRejected ? '<div class="rejected-dot"></div>'
@@ -696,7 +763,7 @@
       const tb = div.querySelector('.trash-conv-btn');
       if (tb) tb.addEventListener('click', async e => {
         e.stopPropagation();
-        const ok = await showConfirm({ icon: '🗑️', title: 'Eliminar conversación', msg: `Los mensajes con ${cv.u?.name?.split(' ')[0]} se ocultarán. El match se conserva.`, okText: 'Eliminar', okColor: '#f87171' });
+        const ok = await showConfirm({ icon: '🗑️', title: 'Eliminar conversación', msg: `Los mensajes con ${escapeHtml(cv.u?.name?.split(' ')[0] || '')} se ocultarán. El match se conserva.`, okText: 'Eliminar', okColor: '#f87171' });
         if (!ok) return;
         trashedConvos.add(cv.u.user_id); saveTrash(); updateTrashBadge(); renderConvos();
         toast('Conversación eliminada 🗑️', 'ok');
@@ -717,7 +784,7 @@
       await sb.from('matches').upsert({ user1_id: u1, user2_id: u2, created_at: new Date().toISOString() }, { onConflict: 'user1_id,user2_id' });
       await sb.from('messages').update({ status: 'active' }).eq('sender_id', user.id).eq('receiver_id', senderId).eq('status', 'pending');
       toast('¡Match aceptado! 🎉', 'ok');
-      loadMatches(); loadConvos();
+      Promise.all([loadMatches(), loadConvos()]);
     } catch (err) { console.error(err); toast('Error al aceptar', 'err'); }
   }
 
@@ -740,7 +807,7 @@
      11. PAPELERA
   ════════════════════════════════════════════════════ */
   function saveTrash() {
-    localStorage.setItem('lionmatch_trash', JSON.stringify([...trashedConvos]));
+    try { localStorage.setItem('lionmatch_trash', JSON.stringify([...trashedConvos])); } catch { /* storage lleno */ }
   }
 
   function updateTrashBadge() {
@@ -761,13 +828,13 @@
     const { data: profs } = await sb.from('profiles').select('user_id,name,photo_url').in('user_id', uids);
     const profMap = {};
     (profs || []).forEach(p => profMap[p.user_id] = p);
-    list.innerHTML = '';
+    const frag = document.createDocumentFragment();
     uids.forEach(uid => {
       const prof = profMap[uid]; if (!prof) return;
       const div = document.createElement('div');
       div.style.cssText = 'background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r3);padding:1rem;margin-bottom:.75rem;display:flex;gap:.85rem;align-items:center';
       const avHtml = prof.photo_url
-        ? `<img src="${prof.photo_url}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;flex-shrink:0;opacity:.7">`
+        ? `<img src="${prof.photo_url}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;flex-shrink:0;opacity:.7" loading="lazy">`
         : `<div style="width:50px;height:50px;border-radius:50%;background:var(--c-panel);flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:.7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
       div.innerHTML = avHtml + `<div style="flex:1;min-width:0"><div style="font-weight:700;color:var(--c-text);margin-bottom:.2rem">${escapeHtml(prof.name || '—')}</div><div style="font-size:.8rem;color:var(--c-muted)">Conversación oculta</div></div><div style="display:flex;flex-direction:column;gap:.5rem;flex-shrink:0"><button class="trash-restore-btn" style="padding:.4rem .75rem;border-radius:var(--r1);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399;font-size:.75rem;font-weight:700;cursor:pointer;font-family:var(--font-b)">↩ Restaurar</button><button class="trash-delete-btn" style="padding:.4rem .75rem;border-radius:var(--r1);background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.2);color:#f87171;font-size:.75rem;font-weight:700;cursor:pointer;font-family:var(--font-b)">🗑 Eliminar</button></div>`;
       div.querySelector('.trash-restore-btn').addEventListener('click', () => {
@@ -780,8 +847,10 @@
         trashedConvos.delete(uid); saveTrash(); updateTrashBadge(); renderTrashScreen();
         toast('Chat eliminado 🗑️', 'ok');
       });
-      list.appendChild(div);
+      frag.appendChild(div);
     });
+    list.innerHTML = '';
+    list.appendChild(frag);
   }
 
   /* ════════════════════════════════════════════════════
@@ -810,6 +879,7 @@
     if (photoUrl) {
       wrap.innerHTML = ''; wrap.className = 'chat-av-wrap-img';
       const img = document.createElement('img'); img.src = photoUrl; img.className = 'chat-av'; img.alt = p.name || '';
+      img.loading = 'lazy';
       wrap.appendChild(img);
     } else {
       wrap.className = 'chat-av-ph';
@@ -834,7 +904,7 @@
     btn.onclick = async () => {
       const currentOn = localStorage.getItem(key) !== 'off';
       const newState  = !currentOn;
-      localStorage.setItem(key, newState ? 'on' : 'off');
+      try { localStorage.setItem(key, newState ? 'on' : 'off'); } catch { /* storage lleno */ }
       updateBellUI(newState, btn, icon);
       toast(newState ? 'Notificaciones activadas 🔔' : 'Notificaciones silenciadas 🔕', 'ok');
       if (newState && 'Notification' in window && Notification.permission === 'default') {
@@ -1058,7 +1128,9 @@
       updateAdminBadge(0); return;
     }
     updateAdminBadge(data.length); list.innerHTML = '';
-    data.forEach(profile => list.appendChild(buildAdminCard(profile)));
+    const frag = document.createDocumentFragment();
+    data.forEach(profile => frag.appendChild(buildAdminCard(profile)));
+    list.appendChild(frag);
   }
 
   function updateAdminBadge(count) {
@@ -1072,10 +1144,10 @@
     const div = document.createElement('div');
     div.className = 'admin-card';
     const avHtml = profile.photo_url
-      ? `<img src="${profile.photo_url}" class="admin-av" alt="${profile.name}">`
+      ? `<img src="${profile.photo_url}" class="admin-av" alt="${escapeHtml(profile.name || '')}" loading="lazy">`
       : `<div class="admin-av-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
     const requestedAt = profile.verification_requested_at ? new Date(profile.verification_requested_at).toLocaleString('es-MX') : '—';
-    div.innerHTML = `<div class="admin-card-head">${avHtml}<div><div style="font-weight:700;color:var(--c-text)">${escapeHtml(profile.name || 'Sin nombre')}</div><div style="font-size:.76rem;color:var(--c-muted)">${escapeHtml(profile.email || '')}</div><div style="font-size:.72rem;color:var(--c-dim);margin-top:.2rem">Solicitado: ${requestedAt}</div></div></div><p style="font-size:.78rem;color:var(--c-muted);margin-bottom:.75rem">Foto de perfil ↑ · Selfie de verificación ↓</p>${profile.verification_photo_url ? `<img src="${profile.verification_photo_url}" class="admin-verif-photo" alt="Selfie">` : `<div style="background:var(--c-panel);border-radius:var(--r2);padding:1.5rem;text-align:center;color:var(--c-muted);margin-bottom:.875rem;font-size:.83rem">Sin foto adjunta</div>`}<div class="admin-actions"><button class="btn btn-danger" data-action="reject">✕ Rechazar</button><button class="btn btn-success" data-action="approve">✓ Aprobar</button></div>`;
+    div.innerHTML = `<div class="admin-card-head">${avHtml}<div><div style="font-weight:700;color:var(--c-text)">${escapeHtml(profile.name || 'Sin nombre')}</div><div style="font-size:.76rem;color:var(--c-muted)">${escapeHtml(profile.email || '')}</div><div style="font-size:.72rem;color:var(--c-dim);margin-top:.2rem">Solicitado: ${requestedAt}</div></div></div><p style="font-size:.78rem;color:var(--c-muted);margin-bottom:.75rem">Foto de perfil ↑ · Selfie de verificación ↓</p>${profile.verification_photo_url ? `<img src="${profile.verification_photo_url}" class="admin-verif-photo" alt="Selfie" loading="lazy">` : `<div style="background:var(--c-panel);border-radius:var(--r2);padding:1.5rem;text-align:center;color:var(--c-muted);margin-bottom:.875rem;font-size:.83rem">Sin foto adjunta</div>`}<div class="admin-actions"><button class="btn btn-danger" data-action="reject">✕ Rechazar</button><button class="btn btn-success" data-action="approve">✓ Aprobar</button></div>`;
     div.querySelector('[data-action="approve"]').addEventListener('click', async function () { this.classList.add('loading'); await adminReviewVerification(profile.user_id, 'approved'); loadAdminPanel(); });
     div.querySelector('[data-action="reject"]').addEventListener('click',  async function () { this.classList.add('loading'); await adminReviewVerification(profile.user_id, 'rejected'); loadAdminPanel(); });
     return div;
@@ -1114,10 +1186,12 @@
       if (p.smokes)     pills.push({ icon: '🚬', label: p.smokes });
       if (p.drinks)     pills.push({ icon: '🍻', label: p.drinks });
       if (pills.length) {
+        const frag = document.createDocumentFragment();
         pills.forEach(pl => {
           const span = document.createElement('span'); span.className = 'lifestyle-pill';
-          span.textContent = `${pl.icon} ${pl.label}`; lifestyleWrap.appendChild(span);
+          span.textContent = `${pl.icon} ${pl.label}`; frag.appendChild(span);
         });
+        lifestyleWrap.appendChild(frag);
         if (lifestyleCard) lifestyleCard.style.display = '';
       } else {
         if (lifestyleCard) lifestyleCard.style.display = 'none';
@@ -1136,9 +1210,11 @@
       intWrap.innerHTML = '';
       if (p.interests) {
         const d = document.createElement('div'); d.className = 'interest-badges';
+        const frag = document.createDocumentFragment();
         p.interests.split(',').map(s => s.trim()).filter(Boolean).forEach(item => {
-          const span = document.createElement('span'); span.className = 'interest-badge'; span.textContent = item; d.appendChild(span);
+          const span = document.createElement('span'); span.className = 'interest-badge'; span.textContent = item; frag.appendChild(span);
         });
+        d.appendChild(frag);
         intWrap.appendChild(d);
       } else {
         intWrap.innerHTML = '<p style="color:var(--c-muted);font-size:.9rem">—</p>';
@@ -1148,19 +1224,23 @@
     const stats = document.getElementById(ids.stats);
     if (stats) {
       stats.innerHTML = '';
-      if (p.age)    { const pill = document.createElement('div'); pill.className = 'stat-pill age-pill'; pill.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${p.age} años`; stats.appendChild(pill); }
-      if (p.gender) { const pill = document.createElement('div'); pill.className = 'stat-pill gender-pill'; pill.textContent = (p.gender === 'Mujer' ? '♀' : '♂') + ' ' + p.gender; stats.appendChild(pill); }
+      const frag = document.createDocumentFragment();
+      if (p.age)    { const pill = document.createElement('div'); pill.className = 'stat-pill age-pill'; pill.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${p.age} años`; frag.appendChild(pill); }
+      if (p.gender) { const pill = document.createElement('div'); pill.className = 'stat-pill gender-pill'; pill.textContent = (p.gender === 'Mujer' ? '♀' : '♂') + ' ' + p.gender; frag.appendChild(pill); }
+      stats.appendChild(frag);
     }
     // Fotos extra
     const photoRow = document.getElementById(ids.photoRow);
     if (photoRow) {
       photoRow.innerHTML = '';
+      const frag = document.createDocumentFragment();
       [p.photo2_url, p.photo3_url, p.photo4_url].forEach(url => {
         if (url) {
           const img = document.createElement('img'); img.src = url; img.className = 'profile-photo-mini'; img.loading = 'lazy';
-          img.addEventListener('click', () => openLightbox(url)); photoRow.appendChild(img);
+          img.addEventListener('click', () => openLightbox(url)); frag.appendChild(img);
         }
       });
+      photoRow.appendChild(frag);
     }
   }
 
@@ -1170,7 +1250,7 @@
     const vBadge  = vStatus === 'approved' ? '<span class="verify-badge verified">✓ Verificado</span>'
                   : vStatus === 'pending'  ? '<span class="verify-badge pending">⏳ En revisión</span>'
                   :                          '<span class="verify-badge none">Sin verificar</span>';
-    document.getElementById('prof-name').innerHTML  = (p.name || '—') + vBadge;
+    document.getElementById('prof-name').innerHTML  = escapeHtml(p.name || '—') + vBadge;
     document.getElementById('prof-bio').textContent = p.bio || 'Sin biografía';
     document.getElementById('prof-seeking').textContent = p.seeking || '—';
     const paraCol = document.getElementById('prof-para-col');
@@ -1195,11 +1275,11 @@
   function renderViewMatchProfile(p) {
     document.getElementById('view-match-header-name').textContent = p.name || 'Perfil';
     const wrap = document.getElementById('view-match-av-wrap');
-    if (p.photo_url) { wrap.className = ''; wrap.innerHTML = `<img src="${p.photo_url}" class="profile-avatar" alt="${p.name}">`; }
+    if (p.photo_url) { wrap.className = ''; wrap.innerHTML = `<img src="${p.photo_url}" class="profile-avatar" alt="${escapeHtml(p.name || '')}">`; }
     else             { wrap.className = 'profile-avatar-ph'; wrap.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`; }
     const vBadge = p.verification_status === 'approved' ? '<span class="verify-badge verified">✓ Verificado</span>'
                  : p.verification_status === 'pending'  ? '<span class="verify-badge pending">⏳ En revisión</span>' : '';
-    document.getElementById('view-match-name').innerHTML = (p.name || '—') + vBadge;
+    document.getElementById('view-match-name').innerHTML = escapeHtml(p.name || '—') + vBadge;
     document.getElementById('view-match-bio').textContent     = p.bio || 'Sin biografía';
     document.getElementById('view-match-seeking').textContent = p.seeking || '—';
     const vmParaCol = document.getElementById('view-match-para-col');
@@ -1421,12 +1501,13 @@
     if (lb) lb.classList.remove('open');
     document.body.style.overflow = '';
   }
+  // FIX CRÍTICO: el HTML usa onclick="closeLightbox()" en atributos inline
+  // que buscan la función en el scope global. Sin esto, el botón ✕ no funciona.
+  window.closeLightbox = closeLightbox;
 
   /* ════════════════════════════════════════════════════
      18. UI HELPERS
   ════════════════════════════════════════════════════ */
-  // FIX: toast ahora limpia el timeout anterior para evitar
-  // que múltiples toasts consecutivos se pisen entre sí.
   let _toastTimer = null;
   function toast(msg, type = 'ok') {
     const t = document.getElementById('toast');
@@ -1436,6 +1517,7 @@
   }
 
   function escapeHtml(str) {
+    if (str == null) return '';
     return String(str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1508,7 +1590,7 @@
     document.getElementById('del-confirm').addEventListener('click', handleDelete);
     document.getElementById('match-later').addEventListener('click', () => closeModal('m-match'));
     document.getElementById('match-chat-btn').addEventListener('click', () => {
-      closeModal('m-match'); showScreen('messages'); loadMatches(); loadConvos();
+      closeModal('m-match'); showScreen('messages'); Promise.all([loadMatches(), loadConvos()]);
     });
   }
 
@@ -1518,13 +1600,15 @@
   function buildInterestChips() {
     ['ob-interest-chips', 'edit-interest-chips'].forEach(cid => {
       const c = document.getElementById(cid); if (!c) return;
+      const frag = document.createDocumentFragment();
       INTERESTS_LIST.forEach(item => {
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'int-chip'; btn.dataset.interest = item.label;
         btn.textContent = item.emoji + ' ' + item.label;
         btn.addEventListener('click', () => toggleInterest(btn, cid));
-        c.appendChild(btn);
+        frag.appendChild(btn);
       });
+      c.appendChild(frag);
     });
   }
 
@@ -1695,7 +1779,7 @@
       item.addEventListener('click', () => {
         const s = item.dataset.s; closeSidebar();
         if      (s === 'discovery') { showScreen('discovery'); loadProfiles(); }
-        else if (s === 'messages')  { showScreen('messages');  loadMatches(); loadConvos(); }
+        else if (s === 'messages')  { showScreen('messages');  Promise.all([loadMatches(), loadConvos()]); }
         else if (s === 'profile')   { showScreen('profile');   renderProfile(); }
         else if (s === 'matches')   { showScreen('matches');   loadMatchesPage(); }
         else if (s === 'verify')    { showScreen('verify');    renderVerifyScreen(); }
@@ -1720,7 +1804,6 @@
      24. FORMULARIOS PRINCIPALES
   ════════════════════════════════════════════════════ */
   function initForms() {
-    // Helper: evita crash si un elemento no existe en el HTML
     const on = (id, ev, fn) => document.getElementById(id)?.addEventListener(ev, fn);
 
     on('login-form',    'submit', handleLogin);
@@ -1797,8 +1880,6 @@
   }
 
   function initTogglePw() {
-    // FIX: 'mousedown' no es confiable en móviles/touch — usamos 'click'
-    // que funciona igual en desktop y en todos los navegadores móviles.
     document.addEventListener('click', e => {
       const btn = e.target.closest('.toggle-pw'); if (!btn) return;
       e.preventDefault();

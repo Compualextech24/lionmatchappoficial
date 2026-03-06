@@ -170,6 +170,8 @@
       obStep = 1;
       selectedInterests = [];
       photoDataURL = null; photoDataURL2 = null; photoDataURL3 = null; photoDataURL4 = null;
+      // Limpiar cualquier spinner residual de botones del onboarding
+      document.querySelectorAll('#onboarding-screen .btn').forEach(b => b.classList.remove('loading'));
       showScreen('onboarding', false);
     }
   };
@@ -247,29 +249,33 @@
     const btn = e.target.querySelector('[type=submit]');
     btn.classList.add('loading');
     try {
+      console.log('[Login] Iniciando signInWithPassword...');
       const { data, error } = await sb.auth.signInWithPassword({
         email:    document.getElementById('login-email').value.trim(),
         password: document.getElementById('login-password').value,
       });
+      console.log('[Login] Respuesta Supabase:', { error, userId: data?.user?.id });
       if (error) throw error;
-      // Marcar _bootDone ANTES de loadProfile para que onAuthStateChange
-      // no duplique la navegación cuando SIGNED_IN se dispare.
       window._bootDone = true;
       user = data.user;
+      console.log('[Login] Cargando perfil...');
       try {
         await loadProfile();
+        console.log('[Login] Perfil cargado:', user.profile);
       } catch (profileErr) {
-        // loadProfile falló pero el login fue exitoso; continuamos con profile null.
-        console.warn('loadProfile error (non-fatal):', profileErr);
+        console.warn('[Login] loadProfile error (non-fatal):', profileErr);
         user.profile = null;
       }
+      console.log('[Login] Llamando goHome()...');
       toast('¡Bienvenido de nuevo!', 'ok');
       goHome();
+      console.log('[Login] goHome() completado.');
     } catch (authErr) {
-      // Solo llegamos aquí si signInWithPassword lanzó error (credenciales malas).
+      console.error('[Login] Error de autenticación:', authErr);
       window._bootDone = false;
       showError('Correo o contraseña incorrectos.', 'Acceso denegado');
     } finally {
+      console.log('[Login] finally: quitando spinner del botón.');
       btn.classList.remove('loading');
     }
   }

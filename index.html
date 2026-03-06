@@ -13,9 +13,25 @@
 <div class="app" id="app">
 
   <!-- ══════════════════════════════════════
+       SPLASH (carga inicial)
+  ══════════════════════════════════════ -->
+  <div id="splash-screen">
+    <div class="splash-logo">
+      <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    </div>
+    <div class="splash-title">LionMatch</div>
+    <p class="splash-sub">Conecta en León, Guanajuato</p>
+    <div class="splash-dots">
+      <div class="splash-dot"></div>
+      <div class="splash-dot"></div>
+      <div class="splash-dot"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
        LOGIN
   ══════════════════════════════════════ -->
-  <div id="login-screen" class="screen active">
+  <div id="login-screen" class="screen">
     <div class="login-inner">
       <div class="logo-wrap">
         <img src="logomatch.png" alt="LionMatch" class="logo-img">
@@ -38,16 +54,10 @@
               </button>
             </div>
           </div>
-          <div class="check-row-dual">
-            <label class="check-row">
-              <input type="checkbox" id="age-confirm" required>
-              <span>Mayor de edad</span>
-            </label>
-            <label class="check-row">
-              <input type="checkbox" id="keep-session">
-              <span>Mantener sesión</span>
-            </label>
-          </div>
+          <label class="check-row">
+            <input type="checkbox" id="age-confirm" required>
+            <span>Confirmo que soy mayor de 18 años</span>
+          </label>
           <div class="login-btn-row">
             <button type="submit" class="btn btn-primary">Ingresar</button>
             <button type="button" class="btn btn-blue" id="go-register">Crear cuenta</button>

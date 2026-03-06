@@ -94,6 +94,7 @@
         user = null;
         stopRealtime();
         navStack = [];
+        hideSplash();
         showScreen('login', false);
         toast('Sesión expirada. Por favor vuelve a ingresar.', 'err');
         return;
@@ -105,6 +106,7 @@
         user = null;
         stopRealtime();
         navStack = [];
+        hideSplash();
         showScreen('login', false);
         return;
       }
@@ -123,21 +125,33 @@
         window._bootDone = true;
         user = session.user;
         await loadProfile();
+        hideSplash();
         goHome();
       }
     });
 
-    // onAuthStateChange + INITIAL_SESSION maneja todo el arranque.
-    // Esperamos hasta 400 ms para que Supabase dispare INITIAL_SESSION
-    // antes de decidir mostrar el login (evita flash falso).
-    await new Promise(r => setTimeout(r, 400));
-    if (!window._bootDone) showScreen('login', false);
+    // Esperamos hasta 1200ms para que Supabase dispare INITIAL_SESSION.
+    // El splash cubre este tiempo — si no hay sesión, lo ocultamos y mostramos login.
+    await new Promise(r => setTimeout(r, 1200));
+    if (!window._bootDone) {
+      hideSplash();
+      showScreen('login', false);
+    }
   });
 
   /* ════════════════════════════════════════════════════
      4. NAVEGACIÓN CON HISTORIAL
   ════════════════════════════════════════════════════ */
   const ROOT_SCREENS = new Set(['login', 'register', 'onboarding', 'discovery']);
+
+  /* ── Ocultar splash con fade ─────────────────────────────────── */
+  window.hideSplash = function () {
+    const splash = document.getElementById('splash-screen');
+    if (!splash || splash.classList.contains('hide')) return;
+    splash.classList.add('hide');
+    // Limpiarlo del DOM después de la transición para no bloquear clicks
+    setTimeout(() => { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 700);
+  };
 
   window.showScreen = function (id, pushHistory = true) {
     const current = document.querySelector('.screen.active')?.id?.replace('-screen', '');
@@ -274,6 +288,7 @@
         user.profile = null;
       }
       console.log('[Login] Llamando goHome()...');
+      hideSplash();
       toast('¡Bienvenido de nuevo!', 'ok');
       goHome();
       console.log('[Login] goHome() completado.');

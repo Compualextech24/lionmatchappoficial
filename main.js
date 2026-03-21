@@ -316,7 +316,7 @@
     try {
       const { data, error } = await sb.auth.signUp({
         email, password: pw,
-        options: { emailRedirectTo: 'https://flavioalejandrov24-lang.github.io/Citasyparejasleongto/' },
+        options: { emailRedirectTo: 'https://lionmatchappoficial.vercel.app/' },
       });
       if (error) {
         const m = (error.message || '').toLowerCase();
@@ -356,7 +356,7 @@
     btn.classList.add('loading');
     try {
       const { error } = await sb.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://flavioalejandrov24-lang.github.io/Citasyparejasleongto/'
+        redirectTo: 'https://lionmatchappoficial.vercel.app/'
       });
       if (error) throw error;
       closeModal('m-recovery');

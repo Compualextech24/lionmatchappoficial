@@ -1403,7 +1403,7 @@
     if (!name)                        { toast('El nombre es requerido', 'err'); return false; }
     if (!birth)                       { toast('La fecha de nacimiento es requerida', 'err'); return false; }
     if (calcAge(birth) < 18)          { toast('Debes ser mayor de 18 años', 'err'); return false; }
-    if (bio.length < 200)             { toast(`La descripción necesita al menos 200 caracteres (tienes ${bio.length})`, 'err'); return false; }
+    if (bio.length < 50)             { toast(`La descripción necesita al menos 50 caracteres (tienes ${bio.length})`, 'err'); return false; }
     if (selectedInterests.length < 3) { toast('Selecciona al menos 3 intereses', 'err'); return false; }
     return true;
   }
@@ -1449,7 +1449,7 @@
   function validateObStep3() {
     const bio      = document.getElementById('ob-bio').value.trim();
     const intCount = selectedInterests.length;
-    if (bio.length < 200) { toast(`La descripción necesita al menos 200 caracteres (tienes ${bio.length})`, 'err'); return false; }
+    if (bio.length < 50) { toast(`La descripción necesita al menos 50 caracteres (tienes ${bio.length})`, 'err'); return false; }
     if (intCount < 3)     { toast(`Selecciona al menos 3 intereses (tienes ${intCount})`, 'err'); return false; }
     return true;
   }
